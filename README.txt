@@ -41,5 +41,9 @@ Updates and contact information may be found on the project's website:
 Current version is 1.1.0, corresponding with the C implementation
 included with this module.  The C code was copied from:
   http://info.isl.ntt.co.jp/crypt/eng/camellia/dl/camellia-GPL-1.1.0.tar.gz
+UPDATE 2013-07-02: patched to compile properly on OS X
 
+= ACKNOWLEDGEMENTS =
 
+2013-07-02: Thanks to Andy Schworer (@schwo) for the patch to allow the
+camellia C implementation to compile properly on OS X. 

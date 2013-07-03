@@ -44,10 +44,15 @@ typedef unsigned __int64 uint64_t;
 #include <inttypes.h>
 #endif
 
-#if BYTE_ORDER == _LITTLE_ENDIAN || __i386__ || __alpha__ || _M_IX86
-#define L_ENDIAN
+// OSX defines _LITTLE_ENDIAN as __LITTLE_ENDIAN__, so lets handle that.
+#if defined(__APPLE__) && defined(__LITTLE_ENDIAN__)
+    #define L_ENDIAN
 #else
-#undef L_ENDIAN
+    #if BYTE_ORDER == _LITTLE_ENDIAN || __i386__ || __alpha__ || _M_IX86
+        #define L_ENDIAN
+    #else
+        #undef L_ENDIAN
+    #endif
 #endif
 
 
