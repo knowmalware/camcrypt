@@ -6,7 +6,7 @@ the Camellia cryptographic cipher.
 import ctypes
 from os.path import dirname, join
 
-_VERSION = "1.1.0"
+_VERSION = "1.2.0"
 
 def version():
   """ Return the library version string.
