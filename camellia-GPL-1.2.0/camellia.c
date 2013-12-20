@@ -1,6 +1,6 @@
-/* camellia.h	ver 1.1.0
+/* camellia.h	ver 1.2.0
  *
- * Copyright (C) 2006
+ * Copyright (C) 2006,2007
  * NTT (Nippon Telegraph and Telephone Corporation).
  *
  * This program is free software; you can redistribute it and/or
@@ -23,38 +23,14 @@
  *  http://info.isl.ntt.co.jp/crypt/eng/camellia/specifications.html
  */
 
-/*
- *
- * NOTE --- NOTE --- NOTE --- NOTE
- * This implementation assumes that all memory addresses passed
- * as parameters are four-byte aligned.
- *
- */
-
 #include <string.h>
 #include <stdlib.h>
 
 #include "camellia.h"
 
-#if defined(_MSC_VER)
-typedef unsigned char uint8_t;
-typedef unsigned int uint32_t;
-typedef unsigned __int64 uint64_t;
-#else
-#include <inttypes.h>
-#endif
-
-// OSX defines _LITTLE_ENDIAN as __LITTLE_ENDIAN__, so lets handle that.
-#if defined(__APPLE__) && defined(__LITTLE_ENDIAN__)
-    #define L_ENDIAN
-#else
-    #if BYTE_ORDER == _LITTLE_ENDIAN || __i386__ || __alpha__ || _M_IX86
-        #define L_ENDIAN
-    #else
-        #undef L_ENDIAN
-    #endif
-#endif
-
+/* u32 must be 32bit word */
+typedef unsigned int u32;
+typedef unsigned char u8;
 
 /* key constants */
 
@@ -77,67 +53,29 @@ typedef unsigned __int64 uint64_t;
 
 
 #if defined(_MSC_VER)
-# define SWAP(x) (_lrotl(x, 8) & 0x00ff00ff | _lrotr(x, 8) & 0xff00ff00)
-# define GETU32(p) SWAP(*((uint32_t *)(p)))
-# define CAMELLIA_SWAP4(x) (x = (_lrotl(x, 8) & 0x00ff00ff | _lrotr(x, 8) & 0xff00ff00))
-#else /* not MS-VC */
-# define GETU32(pt) (((uint32_t)(pt)[0] << 24)		\
-		     ^ ((uint32_t)(pt)[1] << 16)	\
-		     ^ ((uint32_t)(pt)[2] <<  8)	\
-		     ^ ((uint32_t)(pt)[3]))
 
-#ifdef L_ENDIAN
-#define CAMELLIA_SWAP4(x)				\
-    do {						\
-	x = ((uint32_t)x << 16) + ((uint32_t)x >> 16);	\
-	x = (((uint32_t)x & 0xff00ff) << 8) +		\
-	    (((uint32_t)x >> 8) & 0xff00ff);		\
-    } while(0)
-#else /* big endian */
-#define CAMELLIA_SWAP4(x)
-#endif /* L_ENDIAN */
+# define SWAP(x) (_lrotl(x, 8) & 0x00ff00ff | _lrotr(x, 8) & 0xff00ff00)
+# define GETU32(p) SWAP(*((u32 *)(p)))
+# define PUTU32(ct, st) {*((u32 *)(ct)) = SWAP((st));}
+
+#else /* not MS-VC */
+
+# define GETU32(pt)				\
+    (((u32)(pt)[0] << 24)			\
+     ^ ((u32)(pt)[1] << 16)			\
+     ^ ((u32)(pt)[2] <<  8)			\
+     ^ ((u32)(pt)[3]))
+
+# define PUTU32(ct, st)  {			\
+	(ct)[0] = (u8)((st) >> 24);		\
+	(ct)[1] = (u8)((st) >> 16);		\
+	(ct)[2] = (u8)((st) >>  8);		\
+	(ct)[3] = (u8)(st); }
+
 #endif
 
-#define COPY4WORD(dst, src)			\
-    do {					\
-	(dst)[0]=(src)[0];			\
-	(dst)[1]=(src)[1];			\
-	(dst)[2]=(src)[2];			\
-	(dst)[3]=(src)[3];			\
-    }while(0)
-
-#define SWAP4WORD(word)				\
-    do {					\
-	CAMELLIA_SWAP4((word)[0]);		\
-	CAMELLIA_SWAP4((word)[1]);		\
-	CAMELLIA_SWAP4((word)[2]);		\
-	CAMELLIA_SWAP4((word)[3]);		\
-    }while(0)
-
-#define XOR4WORD(a, b)/* a = a ^ b */		\
-    do {					\
-	(a)[0]^=(b)[0];				\
-	(a)[1]^=(b)[1];				\
-	(a)[2]^=(b)[2];				\
-	(a)[3]^=(b)[3];				\
-    }while(0)
-
-#define XOR4WORD2(a, b, c)/* a = b ^ c */	\
-    do {					\
-	(a)[0]=(b)[0]^(c)[0];			\
-	(a)[1]=(b)[1]^(c)[1];			\
-	(a)[2]=(b)[2]^(c)[2];			\
-	(a)[3]=(b)[3]^(c)[3];			\
-    }while(0)
-
-
-#ifdef L_ENDIAN
-#define CamelliaSubkeyL(INDEX) (subkey[(INDEX)*2 + 1])
-#define CamelliaSubkeyR(INDEX) (subkey[(INDEX)*2])
-#else /* big endian */
 #define CamelliaSubkeyL(INDEX) (subkey[(INDEX)*2])
 #define CamelliaSubkeyR(INDEX) (subkey[(INDEX)*2 + 1])
-#endif /* L_ENDIAN */
 
 /* rotation right shift 1byte */
 #define CAMELLIA_RR8(x) (((x) >> 8) + ((x) << 24))
@@ -194,42 +132,6 @@ typedef unsigned __int64 uint64_t;
  * for speed up
  *
  */
-#if !defined(_MSC_VER)
-
-#define CAMELLIA_FLS(ll, lr, rl, rr, kll, klr, krl, krr, t0, t1, t2, t3) \
-    do {								\
-	t0 = kll;							\
-	t2 = krr;							\
-	t0 &= ll;							\
-	t2 |= rr;							\
-	rl ^= t2;							\
-	lr ^= CAMELLIA_RL1(t0);						\
-	t3 = krl;							\
-	t1 = klr;							\
-	t3 &= rl;							\
-	t1 |= lr;							\
-	ll ^= t1;							\
-	rr ^= CAMELLIA_RL1(t3);						\
-    } while(0)
-
-#define CAMELLIA_ROUNDSM(xl, xr, kl, kr, yl, yr, il, ir, t0, t1)	\
-    do {								\
-	ir =  CAMELLIA_SP1110(xr & 0xff);				\
-	il =  CAMELLIA_SP1110((xl>>24) & 0xff);				\
-	ir ^= CAMELLIA_SP0222((xr>>24) & 0xff);				\
-	il ^= CAMELLIA_SP0222((xl>>16) & 0xff);				\
-	ir ^= CAMELLIA_SP3033((xr>>16) & 0xff);				\
-	il ^= CAMELLIA_SP3033((xl>>8) & 0xff);				\
-	ir ^= CAMELLIA_SP4404((xr>>8) & 0xff);				\
-	il ^= CAMELLIA_SP4404(xl & 0xff);				\
-	il ^= kl;							\
-	ir ^= il ^ kr;							\
-	yl ^= ir;							\
-	yr ^= CAMELLIA_RR8(il) ^ ir;					\
-    } while(0)
-
-#else /* for MS-VC */
-
 #define CAMELLIA_FLS(ll, lr, rl, rr, kll, klr, krl, krr, t0, t1, t2, t3) \
     do {								\
 	t0 = kll;							\
@@ -249,18 +151,14 @@ typedef unsigned __int64 uint64_t;
 
 #define CAMELLIA_ROUNDSM(xl, xr, kl, kr, yl, yr, il, ir, t0, t1)	\
     do {								\
-	il = xl;							\
-	ir = xr;							\
-	t0 = il >> 16;							\
-	t1 = ir >> 16;							\
-	ir = CAMELLIA_SP1110(ir & 0xff)					\
-	    ^ CAMELLIA_SP0222((t1 >> 8) & 0xff)				\
-	    ^ CAMELLIA_SP3033(t1 & 0xff)				\
-	    ^ CAMELLIA_SP4404((ir >> 8) & 0xff);			\
-	il = CAMELLIA_SP1110((t0 >> 8) & 0xff)				\
-	    ^ CAMELLIA_SP0222(t0 & 0xff)				\
-	    ^ CAMELLIA_SP3033((il >> 8) & 0xff)				\
-	    ^ CAMELLIA_SP4404(il & 0xff);				\
+	ir = CAMELLIA_SP1110(xr & 0xff)					\
+	    ^ CAMELLIA_SP0222((xr >> 24) & 0xff)			\
+	    ^ CAMELLIA_SP3033((xr >> 16) & 0xff)			\
+	    ^ CAMELLIA_SP4404((xr >> 8) & 0xff);			\
+	il = CAMELLIA_SP1110((xl >> 24) & 0xff)				\
+	    ^ CAMELLIA_SP0222((xl >> 16) & 0xff)			\
+	    ^ CAMELLIA_SP3033((xl >> 8) & 0xff)				\
+	    ^ CAMELLIA_SP4404(xl & 0xff);				\
 	il ^= kl;							\
 	ir ^= kr;							\
 	ir ^= il;							\
@@ -269,9 +167,9 @@ typedef unsigned __int64 uint64_t;
 	yl ^= ir;							\
 	yr ^= il;							\
     } while(0)
-#endif
 
-static const uint32_t camellia_sp1110[256] = {
+
+static const u32 camellia_sp1110[256] = {
     0x70707000,0x82828200,0x2c2c2c00,0xececec00,
     0xb3b3b300,0x27272700,0xc0c0c000,0xe5e5e500,
     0xe4e4e400,0x85858500,0x57575700,0x35353500,
@@ -338,7 +236,7 @@ static const uint32_t camellia_sp1110[256] = {
     0x77777700,0xc7c7c700,0x80808000,0x9e9e9e00,
 };
 
-static const uint32_t camellia_sp0222[256] = {
+static const u32 camellia_sp0222[256] = {
     0x00e0e0e0,0x00050505,0x00585858,0x00d9d9d9,
     0x00676767,0x004e4e4e,0x00818181,0x00cbcbcb,
     0x00c9c9c9,0x000b0b0b,0x00aeaeae,0x006a6a6a,
@@ -405,7 +303,7 @@ static const uint32_t camellia_sp0222[256] = {
     0x00eeeeee,0x008f8f8f,0x00010101,0x003d3d3d,
 };
 
-static const uint32_t camellia_sp3033[256] = {
+static const u32 camellia_sp3033[256] = {
     0x38003838,0x41004141,0x16001616,0x76007676,
     0xd900d9d9,0x93009393,0x60006060,0xf200f2f2,
     0x72007272,0xc200c2c2,0xab00abab,0x9a009a9a,
@@ -472,7 +370,7 @@ static const uint32_t camellia_sp3033[256] = {
     0xbb00bbbb,0xe300e3e3,0x40004040,0x4f004f4f,
 };
 
-static const uint32_t camellia_sp4404[256] = {
+static const u32 camellia_sp4404[256] = {
     0x70700070,0x2c2c002c,0xb3b300b3,0xc0c000c0,
     0xe4e400e4,0x57570057,0xeaea00ea,0xaeae00ae,
     0x23230023,0x6b6b006b,0x45450045,0xa5a500a5,
@@ -546,13 +444,13 @@ static const uint32_t camellia_sp4404[256] = {
 #define subl(x) subL[(x)]
 #define subr(x) subR[(x)]
 
-void camellia_setup128(const unsigned char *key, uint32_t *subkey)
+void camellia_setup128(const unsigned char *key, u32 *subkey)
 {
-    uint32_t kll, klr, krl, krr;
-    uint32_t il, ir, t0, t1, w0, w1;
-    uint32_t kw4l, kw4r, dw, tl, tr;
-    uint32_t subL[26];
-    uint32_t subR[26];
+    u32 kll, klr, krl, krr;
+    u32 il, ir, t0, t1, w0, w1;
+    u32 kw4l, kw4r, dw, tl, tr;
+    u32 subL[26];
+    u32 subR[26];
 
     /**
      *  k == kll || klr || krl || krr (|| is concatination)
@@ -564,43 +462,24 @@ void camellia_setup128(const unsigned char *key, uint32_t *subkey)
     /**
      * generate KL dependent subkeys
      */
-    /* kw1 */
     subl(0) = kll; subr(0) = klr;
-    /* kw2 */
     subl(1) = krl; subr(1) = krr;
-    /* rotation left shift 15bit */
     CAMELLIA_ROLDQ(kll, klr, krl, krr, w0, w1, 15);
-    /* k3 */
     subl(4) = kll; subr(4) = klr;
-    /* k4 */
     subl(5) = krl; subr(5) = krr;
-    /* rotation left shift 15+30bit */
     CAMELLIA_ROLDQ(kll, klr, krl, krr, w0, w1, 30);
-    /* k7 */
     subl(10) = kll; subr(10) = klr;
-    /* k8 */
     subl(11) = krl; subr(11) = krr;
-    /* rotation left shift 15+30+15bit */
     CAMELLIA_ROLDQ(kll, klr, krl, krr, w0, w1, 15);
-    /* k10 */
     subl(13) = krl; subr(13) = krr;
-    /* rotation left shift 15+30+15+17 bit */
     CAMELLIA_ROLDQ(kll, klr, krl, krr, w0, w1, 17);
-    /* kl3 */
     subl(16) = kll; subr(16) = klr;
-    /* kl4 */
     subl(17) = krl; subr(17) = krr;
-    /* rotation left shift 15+30+15+17+17 bit */
     CAMELLIA_ROLDQ(kll, klr, krl, krr, w0, w1, 17);
-    /* k13 */
     subl(18) = kll; subr(18) = klr;
-    /* k14 */
     subl(19) = krl; subr(19) = krr;
-    /* rotation left shift 15+30+15+17+17+17 bit */
     CAMELLIA_ROLDQ(kll, klr, krl, krr, w0, w1, 17);
-    /* k17 */
     subl(22) = kll; subr(22) = klr;
-    /* k18 */
     subl(23) = krl; subr(23) = krr;
 
     /* generate KA */
@@ -613,7 +492,6 @@ void camellia_setup128(const unsigned char *key, uint32_t *subkey)
     CAMELLIA_F(krl, krr,
 	       CAMELLIA_SIGMA2L, CAMELLIA_SIGMA2R,
 	       kll, klr, il, ir, t0, t1);
-    /* current status == (kll, klr, w0, w1) */
     CAMELLIA_F(kll, klr,
 	       CAMELLIA_SIGMA3L, CAMELLIA_SIGMA3R,
 	       krl, krr, il, ir, t0, t1);
@@ -624,239 +502,167 @@ void camellia_setup128(const unsigned char *key, uint32_t *subkey)
     kll ^= w0; klr ^= w1;
 
     /* generate KA dependent subkeys */
-    /* k1, k2 */
     subl(2) = kll; subr(2) = klr;
     subl(3) = krl; subr(3) = krr;
     CAMELLIA_ROLDQ(kll, klr, krl, krr, w0, w1, 15);
-    /* k5,k6 */
     subl(6) = kll; subr(6) = klr;
     subl(7) = krl; subr(7) = krr;
     CAMELLIA_ROLDQ(kll, klr, krl, krr, w0, w1, 15);
-    /* kl1, kl2 */
     subl(8) = kll; subr(8) = klr;
     subl(9) = krl; subr(9) = krr;
     CAMELLIA_ROLDQ(kll, klr, krl, krr, w0, w1, 15);
-    /* k9 */
     subl(12) = kll; subr(12) = klr;
     CAMELLIA_ROLDQ(kll, klr, krl, krr, w0, w1, 15);
-    /* k11, k12 */
     subl(14) = kll; subr(14) = klr;
     subl(15) = krl; subr(15) = krr;
     CAMELLIA_ROLDQo32(kll, klr, krl, krr, w0, w1, 34);
-    /* k15, k16 */
     subl(20) = kll; subr(20) = klr;
     subl(21) = krl; subr(21) = krr;
     CAMELLIA_ROLDQ(kll, klr, krl, krr, w0, w1, 17);
-    /* kw3, kw4 */
     subl(24) = kll; subr(24) = klr;
     subl(25) = krl; subr(25) = krr;
 
 
     /* absorb kw2 to other subkeys */
-/* round 2 */
     subl(3) ^= subl(1); subr(3) ^= subr(1);
-/* round 4 */
     subl(5) ^= subl(1); subr(5) ^= subr(1);
-/* round 6 */
     subl(7) ^= subl(1); subr(7) ^= subr(1);
     subl(1) ^= subr(1) & ~subr(9);
-    dw = subl(1) & subl(9),
-	subr(1) ^= CAMELLIA_RL1(dw); /* modified for FLinv(kl2) */
-/* round 8 */
+    dw = subl(1) & subl(9), subr(1) ^= CAMELLIA_RL1(dw);
     subl(11) ^= subl(1); subr(11) ^= subr(1);
-/* round 10 */
     subl(13) ^= subl(1); subr(13) ^= subr(1);
-/* round 12 */
     subl(15) ^= subl(1); subr(15) ^= subr(1);
     subl(1) ^= subr(1) & ~subr(17);
-    dw = subl(1) & subl(17),
-	subr(1) ^= CAMELLIA_RL1(dw); /* modified for FLinv(kl4) */
-/* round 14 */
+    dw = subl(1) & subl(17), subr(1) ^= CAMELLIA_RL1(dw);
     subl(19) ^= subl(1); subr(19) ^= subr(1);
-/* round 16 */
     subl(21) ^= subl(1); subr(21) ^= subr(1);
-/* round 18 */
     subl(23) ^= subl(1); subr(23) ^= subr(1);
-/* kw3 */
     subl(24) ^= subl(1); subr(24) ^= subr(1);
 
     /* absorb kw4 to other subkeys */
     kw4l = subl(25); kw4r = subr(25);
-/* round 17 */
     subl(22) ^= kw4l; subr(22) ^= kw4r;
-/* round 15 */
     subl(20) ^= kw4l; subr(20) ^= kw4r;
-/* round 13 */
     subl(18) ^= kw4l; subr(18) ^= kw4r;
     kw4l ^= kw4r & ~subr(16);
-    dw = kw4l & subl(16),
-	kw4r ^= CAMELLIA_RL1(dw); /* modified for FL(kl3) */
-/* round 11 */
+    dw = kw4l & subl(16), kw4r ^= CAMELLIA_RL1(dw);
     subl(14) ^= kw4l; subr(14) ^= kw4r;
-/* round 9 */
     subl(12) ^= kw4l; subr(12) ^= kw4r;
-/* round 7 */
     subl(10) ^= kw4l; subr(10) ^= kw4r;
     kw4l ^= kw4r & ~subr(8);
-    dw = kw4l & subl(8),
-	kw4r ^= CAMELLIA_RL1(dw); /* modified for FL(kl1) */
-/* round 5 */
+    dw = kw4l & subl(8), kw4r ^= CAMELLIA_RL1(dw);
     subl(6) ^= kw4l; subr(6) ^= kw4r;
-/* round 3 */
     subl(4) ^= kw4l; subr(4) ^= kw4r;
-/* round 1 */
     subl(2) ^= kw4l; subr(2) ^= kw4r;
-/* kw1 */
     subl(0) ^= kw4l; subr(0) ^= kw4r;
 
-
     /* key XOR is end of F-function */
-    CamelliaSubkeyL(0) = subl(0) ^ subl(2);/* kw1 */
+    CamelliaSubkeyL(0) = subl(0) ^ subl(2);
     CamelliaSubkeyR(0) = subr(0) ^ subr(2);
-    CamelliaSubkeyL(2) = subl(3);       /* round 1 */
+    CamelliaSubkeyL(2) = subl(3);
     CamelliaSubkeyR(2) = subr(3);
-    CamelliaSubkeyL(3) = subl(2) ^ subl(4); /* round 2 */
+    CamelliaSubkeyL(3) = subl(2) ^ subl(4);
     CamelliaSubkeyR(3) = subr(2) ^ subr(4);
-    CamelliaSubkeyL(4) = subl(3) ^ subl(5); /* round 3 */
+    CamelliaSubkeyL(4) = subl(3) ^ subl(5);
     CamelliaSubkeyR(4) = subr(3) ^ subr(5);
-    CamelliaSubkeyL(5) = subl(4) ^ subl(6); /* round 4 */
+    CamelliaSubkeyL(5) = subl(4) ^ subl(6);
     CamelliaSubkeyR(5) = subr(4) ^ subr(6);
-    CamelliaSubkeyL(6) = subl(5) ^ subl(7); /* round 5 */
+    CamelliaSubkeyL(6) = subl(5) ^ subl(7);
     CamelliaSubkeyR(6) = subr(5) ^ subr(7);
     tl = subl(10) ^ (subr(10) & ~subr(8));
-    dw = tl & subl(8),  /* FL(kl1) */
-	tr = subr(10) ^ CAMELLIA_RL1(dw);
-    CamelliaSubkeyL(7) = subl(6) ^ tl; /* round 6 */
+    dw = tl & subl(8), tr = subr(10) ^ CAMELLIA_RL1(dw);
+    CamelliaSubkeyL(7) = subl(6) ^ tl;
     CamelliaSubkeyR(7) = subr(6) ^ tr;
-    CamelliaSubkeyL(8) = subl(8);       /* FL(kl1) */
+    CamelliaSubkeyL(8) = subl(8);
     CamelliaSubkeyR(8) = subr(8);
-    CamelliaSubkeyL(9) = subl(9);       /* FLinv(kl2) */
+    CamelliaSubkeyL(9) = subl(9);
     CamelliaSubkeyR(9) = subr(9);
     tl = subl(7) ^ (subr(7) & ~subr(9));
-    dw = tl & subl(9),  /* FLinv(kl2) */
-	tr = subr(7) ^ CAMELLIA_RL1(dw);
-    CamelliaSubkeyL(10) = tl ^ subl(11); /* round 7 */
+    dw = tl & subl(9), tr = subr(7) ^ CAMELLIA_RL1(dw);
+    CamelliaSubkeyL(10) = tl ^ subl(11);
     CamelliaSubkeyR(10) = tr ^ subr(11);
-    CamelliaSubkeyL(11) = subl(10) ^ subl(12); /* round 8 */
+    CamelliaSubkeyL(11) = subl(10) ^ subl(12);
     CamelliaSubkeyR(11) = subr(10) ^ subr(12);
-    CamelliaSubkeyL(12) = subl(11) ^ subl(13); /* round 9 */
+    CamelliaSubkeyL(12) = subl(11) ^ subl(13);
     CamelliaSubkeyR(12) = subr(11) ^ subr(13);
-    CamelliaSubkeyL(13) = subl(12) ^ subl(14); /* round 10 */
+    CamelliaSubkeyL(13) = subl(12) ^ subl(14);
     CamelliaSubkeyR(13) = subr(12) ^ subr(14);
-    CamelliaSubkeyL(14) = subl(13) ^ subl(15); /* round 11 */
+    CamelliaSubkeyL(14) = subl(13) ^ subl(15);
     CamelliaSubkeyR(14) = subr(13) ^ subr(15);
     tl = subl(18) ^ (subr(18) & ~subr(16));
-    dw = tl & subl(16), /* FL(kl3) */
-	tr = subr(18) ^ CAMELLIA_RL1(dw);
-    CamelliaSubkeyL(15) = subl(14) ^ tl; /* round 12 */
+    dw = tl & subl(16),	tr = subr(18) ^ CAMELLIA_RL1(dw);
+    CamelliaSubkeyL(15) = subl(14) ^ tl;
     CamelliaSubkeyR(15) = subr(14) ^ tr;
-    CamelliaSubkeyL(16) = subl(16);     /* FL(kl3) */
+    CamelliaSubkeyL(16) = subl(16);
     CamelliaSubkeyR(16) = subr(16);
-    CamelliaSubkeyL(17) = subl(17);     /* FLinv(kl4) */
+    CamelliaSubkeyL(17) = subl(17);
     CamelliaSubkeyR(17) = subr(17);
     tl = subl(15) ^ (subr(15) & ~subr(17));
-    dw = tl & subl(17), /* FLinv(kl4) */
-	tr = subr(15) ^ CAMELLIA_RL1(dw);
-    CamelliaSubkeyL(18) = tl ^ subl(19); /* round 13 */
+    dw = tl & subl(17),	tr = subr(15) ^ CAMELLIA_RL1(dw);
+    CamelliaSubkeyL(18) = tl ^ subl(19);
     CamelliaSubkeyR(18) = tr ^ subr(19);
-    CamelliaSubkeyL(19) = subl(18) ^ subl(20); /* round 14 */
+    CamelliaSubkeyL(19) = subl(18) ^ subl(20);
     CamelliaSubkeyR(19) = subr(18) ^ subr(20);
-    CamelliaSubkeyL(20) = subl(19) ^ subl(21); /* round 15 */
+    CamelliaSubkeyL(20) = subl(19) ^ subl(21);
     CamelliaSubkeyR(20) = subr(19) ^ subr(21);
-    CamelliaSubkeyL(21) = subl(20) ^ subl(22); /* round 16 */
+    CamelliaSubkeyL(21) = subl(20) ^ subl(22);
     CamelliaSubkeyR(21) = subr(20) ^ subr(22);
-    CamelliaSubkeyL(22) = subl(21) ^ subl(23); /* round 17 */
+    CamelliaSubkeyL(22) = subl(21) ^ subl(23);
     CamelliaSubkeyR(22) = subr(21) ^ subr(23);
-    CamelliaSubkeyL(23) = subl(22);     /* round 18 */
+    CamelliaSubkeyL(23) = subl(22);
     CamelliaSubkeyR(23) = subr(22);
-    CamelliaSubkeyL(24) = subl(24) ^ subl(23); /* kw3 */
+    CamelliaSubkeyL(24) = subl(24) ^ subl(23);
     CamelliaSubkeyR(24) = subr(24) ^ subr(23);
 
     /* apply the inverse of the last half of P-function */
-    dw = CamelliaSubkeyL(2) ^ CamelliaSubkeyR(2),
-	dw = CAMELLIA_RL8(dw);/* round 1 */
-    CamelliaSubkeyR(2) = CamelliaSubkeyL(2) ^ dw,
-	CamelliaSubkeyL(2) = dw;
-    dw = CamelliaSubkeyL(3) ^ CamelliaSubkeyR(3),
-	dw = CAMELLIA_RL8(dw);/* round 2 */
-    CamelliaSubkeyR(3) = CamelliaSubkeyL(3) ^ dw,
-	CamelliaSubkeyL(3) = dw;
-    dw = CamelliaSubkeyL(4) ^ CamelliaSubkeyR(4),
-	dw = CAMELLIA_RL8(dw);/* round 3 */
-    CamelliaSubkeyR(4) = CamelliaSubkeyL(4) ^ dw,
-	CamelliaSubkeyL(4) = dw;
-    dw = CamelliaSubkeyL(5) ^ CamelliaSubkeyR(5),
-	dw = CAMELLIA_RL8(dw);/* round 4 */
-    CamelliaSubkeyR(5) = CamelliaSubkeyL(5) ^ dw,
-	CamelliaSubkeyL(5) = dw;
-    dw = CamelliaSubkeyL(6) ^ CamelliaSubkeyR(6),
-	dw = CAMELLIA_RL8(dw);/* round 5 */
-    CamelliaSubkeyR(6) = CamelliaSubkeyL(6) ^ dw,
-	CamelliaSubkeyL(6) = dw;
-    dw = CamelliaSubkeyL(7) ^ CamelliaSubkeyR(7),
-	dw = CAMELLIA_RL8(dw);/* round 6 */
-    CamelliaSubkeyR(7) = CamelliaSubkeyL(7) ^ dw,
-	CamelliaSubkeyL(7) = dw;
-    dw = CamelliaSubkeyL(10) ^ CamelliaSubkeyR(10),
-	dw = CAMELLIA_RL8(dw);/* round 7 */
-    CamelliaSubkeyR(10) = CamelliaSubkeyL(10) ^ dw,
-	CamelliaSubkeyL(10) = dw;
-    dw = CamelliaSubkeyL(11) ^ CamelliaSubkeyR(11),
-	dw = CAMELLIA_RL8(dw);/* round 8 */
-    CamelliaSubkeyR(11) = CamelliaSubkeyL(11) ^ dw,
-	CamelliaSubkeyL(11) = dw;
-    dw = CamelliaSubkeyL(12) ^ CamelliaSubkeyR(12),
-	dw = CAMELLIA_RL8(dw);/* round 9 */
-    CamelliaSubkeyR(12) = CamelliaSubkeyL(12) ^ dw,
-	CamelliaSubkeyL(12) = dw;
-    dw = CamelliaSubkeyL(13) ^ CamelliaSubkeyR(13),
-	dw = CAMELLIA_RL8(dw);/* round 10 */
-    CamelliaSubkeyR(13) = CamelliaSubkeyL(13) ^ dw,
-	CamelliaSubkeyL(13) = dw;
-    dw = CamelliaSubkeyL(14) ^ CamelliaSubkeyR(14),
-	dw = CAMELLIA_RL8(dw);/* round 11 */
-    CamelliaSubkeyR(14) = CamelliaSubkeyL(14) ^ dw,
-	CamelliaSubkeyL(14) = dw;
-    dw = CamelliaSubkeyL(15) ^ CamelliaSubkeyR(15),
-	dw = CAMELLIA_RL8(dw);/* round 12 */
-    CamelliaSubkeyR(15) = CamelliaSubkeyL(15) ^ dw,
-	CamelliaSubkeyL(15) = dw;
-    dw = CamelliaSubkeyL(18) ^ CamelliaSubkeyR(18),
-	dw = CAMELLIA_RL8(dw);/* round 13 */
-    CamelliaSubkeyR(18) = CamelliaSubkeyL(18) ^ dw,
-	CamelliaSubkeyL(18) = dw;
-    dw = CamelliaSubkeyL(19) ^ CamelliaSubkeyR(19),
-	dw = CAMELLIA_RL8(dw);/* round 14 */
-    CamelliaSubkeyR(19) = CamelliaSubkeyL(19) ^ dw,
-	CamelliaSubkeyL(19) = dw;
-    dw = CamelliaSubkeyL(20) ^ CamelliaSubkeyR(20),
-	dw = CAMELLIA_RL8(dw);/* round 15 */
-    CamelliaSubkeyR(20) = CamelliaSubkeyL(20) ^ dw,
-	CamelliaSubkeyL(20) = dw;
-    dw = CamelliaSubkeyL(21) ^ CamelliaSubkeyR(21),
-	dw = CAMELLIA_RL8(dw);/* round 16 */
-    CamelliaSubkeyR(21) = CamelliaSubkeyL(21) ^ dw,
-	CamelliaSubkeyL(21) = dw;
-    dw = CamelliaSubkeyL(22) ^ CamelliaSubkeyR(22),
-	dw = CAMELLIA_RL8(dw);/* round 17 */
-    CamelliaSubkeyR(22) = CamelliaSubkeyL(22) ^ dw,
-	CamelliaSubkeyL(22) = dw;
-    dw = CamelliaSubkeyL(23) ^ CamelliaSubkeyR(23),
-	dw = CAMELLIA_RL8(dw);/* round 18 */
-    CamelliaSubkeyR(23) = CamelliaSubkeyL(23) ^ dw,
-	CamelliaSubkeyL(23) = dw;
+    dw = CamelliaSubkeyL(2) ^ CamelliaSubkeyR(2), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(2) = CamelliaSubkeyL(2) ^ dw, CamelliaSubkeyL(2) = dw;
+    dw = CamelliaSubkeyL(3) ^ CamelliaSubkeyR(3), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(3) = CamelliaSubkeyL(3) ^ dw, CamelliaSubkeyL(3) = dw;
+    dw = CamelliaSubkeyL(4) ^ CamelliaSubkeyR(4), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(4) = CamelliaSubkeyL(4) ^ dw, CamelliaSubkeyL(4) = dw;
+    dw = CamelliaSubkeyL(5) ^ CamelliaSubkeyR(5), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(5) = CamelliaSubkeyL(5) ^ dw, CamelliaSubkeyL(5) = dw;
+    dw = CamelliaSubkeyL(6) ^ CamelliaSubkeyR(6), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(6) = CamelliaSubkeyL(6) ^ dw, CamelliaSubkeyL(6) = dw;
+    dw = CamelliaSubkeyL(7) ^ CamelliaSubkeyR(7), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(7) = CamelliaSubkeyL(7) ^ dw, CamelliaSubkeyL(7) = dw;
+    dw = CamelliaSubkeyL(10) ^ CamelliaSubkeyR(10), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(10) = CamelliaSubkeyL(10) ^ dw, CamelliaSubkeyL(10) = dw;
+    dw = CamelliaSubkeyL(11) ^ CamelliaSubkeyR(11), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(11) = CamelliaSubkeyL(11) ^ dw, CamelliaSubkeyL(11) = dw;
+    dw = CamelliaSubkeyL(12) ^ CamelliaSubkeyR(12), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(12) = CamelliaSubkeyL(12) ^ dw, CamelliaSubkeyL(12) = dw;
+    dw = CamelliaSubkeyL(13) ^ CamelliaSubkeyR(13), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(13) = CamelliaSubkeyL(13) ^ dw, CamelliaSubkeyL(13) = dw;
+    dw = CamelliaSubkeyL(14) ^ CamelliaSubkeyR(14), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(14) = CamelliaSubkeyL(14) ^ dw, CamelliaSubkeyL(14) = dw;
+    dw = CamelliaSubkeyL(15) ^ CamelliaSubkeyR(15), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(15) = CamelliaSubkeyL(15) ^ dw, CamelliaSubkeyL(15) = dw;
+    dw = CamelliaSubkeyL(18) ^ CamelliaSubkeyR(18), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(18) = CamelliaSubkeyL(18) ^ dw, CamelliaSubkeyL(18) = dw;
+    dw = CamelliaSubkeyL(19) ^ CamelliaSubkeyR(19), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(19) = CamelliaSubkeyL(19) ^ dw, CamelliaSubkeyL(19) = dw;
+    dw = CamelliaSubkeyL(20) ^ CamelliaSubkeyR(20), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(20) = CamelliaSubkeyL(20) ^ dw, CamelliaSubkeyL(20) = dw;
+    dw = CamelliaSubkeyL(21) ^ CamelliaSubkeyR(21), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(21) = CamelliaSubkeyL(21) ^ dw, CamelliaSubkeyL(21) = dw;
+    dw = CamelliaSubkeyL(22) ^ CamelliaSubkeyR(22), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(22) = CamelliaSubkeyL(22) ^ dw, CamelliaSubkeyL(22) = dw;
+    dw = CamelliaSubkeyL(23) ^ CamelliaSubkeyR(23), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(23) = CamelliaSubkeyL(23) ^ dw, CamelliaSubkeyL(23) = dw;
 
     return;
 }
 
-void camellia_setup256(const unsigned char *key, uint32_t *subkey)
+void camellia_setup256(const unsigned char *key, u32 *subkey)
 {
-    uint32_t kll,klr,krl,krr;           /* left half of key */
-    uint32_t krll,krlr,krrl,krrr;       /* right half of key */
-    uint32_t il, ir, t0, t1, w0, w1;    /* temporary variables */
-    uint32_t kw4l, kw4r, dw, tl, tr;
-    uint32_t subL[34];
-    uint32_t subR[34];
+    u32 kll,klr,krl,krr;           /* left half of key */
+    u32 krll,krlr,krrl,krrr;       /* right half of key */
+    u32 il, ir, t0, t1, w0, w1;    /* temporary variables */
+    u32 kw4l, kw4r, dw, tl, tr;
+    u32 subL[34];
+    u32 subR[34];
 
     /**
      *  key = (kll || klr || krl || krr || krll || krlr || krrl || krrr)
@@ -873,51 +679,33 @@ void camellia_setup256(const unsigned char *key, uint32_t *subkey)
     krrr = GETU32(key + 28);
 
     /* generate KL dependent subkeys */
-    /* kw1 */
     subl(0) = kll; subr(0) = klr;
-    /* kw2 */
     subl(1) = krl; subr(1) = krr;
     CAMELLIA_ROLDQo32(kll, klr, krl, krr, w0, w1, 45);
-    /* k9 */
     subl(12) = kll; subr(12) = klr;
-    /* k10 */
     subl(13) = krl; subr(13) = krr;
     CAMELLIA_ROLDQ(kll, klr, krl, krr, w0, w1, 15);
-    /* kl3 */
     subl(16) = kll; subr(16) = klr;
-    /* kl4 */
     subl(17) = krl; subr(17) = krr;
     CAMELLIA_ROLDQ(kll, klr, krl, krr, w0, w1, 17);
-    /* k17 */
     subl(22) = kll; subr(22) = klr;
-    /* k18 */
     subl(23) = krl; subr(23) = krr;
     CAMELLIA_ROLDQo32(kll, klr, krl, krr, w0, w1, 34);
-    /* k23 */
     subl(30) = kll; subr(30) = klr;
-    /* k24 */
     subl(31) = krl; subr(31) = krr;
 
     /* generate KR dependent subkeys */
     CAMELLIA_ROLDQ(krll, krlr, krrl, krrr, w0, w1, 15);
-    /* k3 */
     subl(4) = krll; subr(4) = krlr;
-    /* k4 */
     subl(5) = krrl; subr(5) = krrr;
     CAMELLIA_ROLDQ(krll, krlr, krrl, krrr, w0, w1, 15);
-    /* kl1 */
     subl(8) = krll; subr(8) = krlr;
-    /* kl2 */
     subl(9) = krrl; subr(9) = krrr;
     CAMELLIA_ROLDQ(krll, krlr, krrl, krrr, w0, w1, 30);
-    /* k13 */
     subl(18) = krll; subr(18) = krlr;
-    /* k14 */
     subl(19) = krrl; subr(19) = krrr;
     CAMELLIA_ROLDQo32(krll, krlr, krrl, krrr, w0, w1, 34);
-    /* k19 */
     subl(26) = krll; subr(26) = krlr;
-    /* k20 */
     subl(27) = krrl; subr(27) = krrr;
     CAMELLIA_ROLDQo32(krll, krlr, krrl, krrr, w0, w1, 34);
 
@@ -955,316 +743,208 @@ void camellia_setup256(const unsigned char *key, uint32_t *subkey)
 
     /* generate KA dependent subkeys */
     CAMELLIA_ROLDQ(kll, klr, krl, krr, w0, w1, 15);
-    /* k5 */
     subl(6) = kll; subr(6) = klr;
-    /* k6 */
     subl(7) = krl; subr(7) = krr;
     CAMELLIA_ROLDQ(kll, klr, krl, krr, w0, w1, 30);
-    /* k11 */
     subl(14) = kll; subr(14) = klr;
-    /* k12 */
     subl(15) = krl; subr(15) = krr;
-    /* rotation left shift 32bit */
-    /* kl5 */
     subl(24) = klr; subr(24) = krl;
-    /* kl6 */
     subl(25) = krr; subr(25) = kll;
-    /* rotation left shift 49 from k11,k12 -> k21,k22 */
     CAMELLIA_ROLDQo32(kll, klr, krl, krr, w0, w1, 49);
-    /* k21 */
     subl(28) = kll; subr(28) = klr;
-    /* k22 */
     subl(29) = krl; subr(29) = krr;
 
     /* generate KB dependent subkeys */
-    /* k1 */
     subl(2) = krll; subr(2) = krlr;
-    /* k2 */
     subl(3) = krrl; subr(3) = krrr;
     CAMELLIA_ROLDQ(krll, krlr, krrl, krrr, w0, w1, 30);
-    /* k7 */
     subl(10) = krll; subr(10) = krlr;
-    /* k8 */
     subl(11) = krrl; subr(11) = krrr;
     CAMELLIA_ROLDQ(krll, krlr, krrl, krrr, w0, w1, 30);
-    /* k15 */
     subl(20) = krll; subr(20) = krlr;
-    /* k16 */
     subl(21) = krrl; subr(21) = krrr;
     CAMELLIA_ROLDQo32(krll, krlr, krrl, krrr, w0, w1, 51);
-    /* kw3 */
     subl(32) = krll; subr(32) = krlr;
-    /* kw4 */
     subl(33) = krrl; subr(33) = krrr;
 
     /* absorb kw2 to other subkeys */
-/* round 2 */
     subl(3) ^= subl(1); subr(3) ^= subr(1);
-/* round 4 */
     subl(5) ^= subl(1); subr(5) ^= subr(1);
-/* round 6 */
     subl(7) ^= subl(1); subr(7) ^= subr(1);
     subl(1) ^= subr(1) & ~subr(9);
-    dw = subl(1) & subl(9),
-	subr(1) ^= CAMELLIA_RL1(dw); /* modified for FLinv(kl2) */
-/* round 8 */
+    dw = subl(1) & subl(9), subr(1) ^= CAMELLIA_RL1(dw);
     subl(11) ^= subl(1); subr(11) ^= subr(1);
-/* round 10 */
     subl(13) ^= subl(1); subr(13) ^= subr(1);
-/* round 12 */
     subl(15) ^= subl(1); subr(15) ^= subr(1);
     subl(1) ^= subr(1) & ~subr(17);
-    dw = subl(1) & subl(17),
-	subr(1) ^= CAMELLIA_RL1(dw); /* modified for FLinv(kl4) */
-/* round 14 */
+    dw = subl(1) & subl(17), subr(1) ^= CAMELLIA_RL1(dw);
     subl(19) ^= subl(1); subr(19) ^= subr(1);
-/* round 16 */
     subl(21) ^= subl(1); subr(21) ^= subr(1);
-/* round 18 */
     subl(23) ^= subl(1); subr(23) ^= subr(1);
     subl(1) ^= subr(1) & ~subr(25);
-    dw = subl(1) & subl(25),
-	subr(1) ^= CAMELLIA_RL1(dw); /* modified for FLinv(kl6) */
-/* round 20 */
+    dw = subl(1) & subl(25), subr(1) ^= CAMELLIA_RL1(dw);
     subl(27) ^= subl(1); subr(27) ^= subr(1);
-/* round 22 */
     subl(29) ^= subl(1); subr(29) ^= subr(1);
-/* round 24 */
     subl(31) ^= subl(1); subr(31) ^= subr(1);
-/* kw3 */
     subl(32) ^= subl(1); subr(32) ^= subr(1);
-
 
     /* absorb kw4 to other subkeys */
     kw4l = subl(33); kw4r = subr(33);
-/* round 23 */
     subl(30) ^= kw4l; subr(30) ^= kw4r;
-/* round 21 */
     subl(28) ^= kw4l; subr(28) ^= kw4r;
-/* round 19 */
     subl(26) ^= kw4l; subr(26) ^= kw4r;
     kw4l ^= kw4r & ~subr(24);
-    dw = kw4l & subl(24),
-	kw4r ^= CAMELLIA_RL1(dw); /* modified for FL(kl5) */
-/* round 17 */
+    dw = kw4l & subl(24), kw4r ^= CAMELLIA_RL1(dw);
     subl(22) ^= kw4l; subr(22) ^= kw4r;
-/* round 15 */
     subl(20) ^= kw4l; subr(20) ^= kw4r;
-/* round 13 */
     subl(18) ^= kw4l; subr(18) ^= kw4r;
     kw4l ^= kw4r & ~subr(16);
-    dw = kw4l & subl(16),
-	kw4r ^= CAMELLIA_RL1(dw); /* modified for FL(kl3) */
-/* round 11 */
+    dw = kw4l & subl(16), kw4r ^= CAMELLIA_RL1(dw);
     subl(14) ^= kw4l; subr(14) ^= kw4r;
-/* round 9 */
     subl(12) ^= kw4l; subr(12) ^= kw4r;
-/* round 7 */
     subl(10) ^= kw4l; subr(10) ^= kw4r;
     kw4l ^= kw4r & ~subr(8);
-    dw = kw4l & subl(8),
-	kw4r ^= CAMELLIA_RL1(dw); /* modified for FL(kl1) */
-/* round 5 */
+    dw = kw4l & subl(8), kw4r ^= CAMELLIA_RL1(dw);
     subl(6) ^= kw4l; subr(6) ^= kw4r;
-/* round 3 */
     subl(4) ^= kw4l; subr(4) ^= kw4r;
-/* round 1 */
     subl(2) ^= kw4l; subr(2) ^= kw4r;
-/* kw1 */
     subl(0) ^= kw4l; subr(0) ^= kw4r;
 
     /* key XOR is end of F-function */
-    CamelliaSubkeyL(0) = subl(0) ^ subl(2);/* kw1 */
+    CamelliaSubkeyL(0) = subl(0) ^ subl(2);
     CamelliaSubkeyR(0) = subr(0) ^ subr(2);
-    CamelliaSubkeyL(2) = subl(3);       /* round 1 */
+    CamelliaSubkeyL(2) = subl(3);
     CamelliaSubkeyR(2) = subr(3);
-    CamelliaSubkeyL(3) = subl(2) ^ subl(4); /* round 2 */
+    CamelliaSubkeyL(3) = subl(2) ^ subl(4);
     CamelliaSubkeyR(3) = subr(2) ^ subr(4);
-    CamelliaSubkeyL(4) = subl(3) ^ subl(5); /* round 3 */
+    CamelliaSubkeyL(4) = subl(3) ^ subl(5);
     CamelliaSubkeyR(4) = subr(3) ^ subr(5);
-    CamelliaSubkeyL(5) = subl(4) ^ subl(6); /* round 4 */
+    CamelliaSubkeyL(5) = subl(4) ^ subl(6);
     CamelliaSubkeyR(5) = subr(4) ^ subr(6);
-    CamelliaSubkeyL(6) = subl(5) ^ subl(7); /* round 5 */
+    CamelliaSubkeyL(6) = subl(5) ^ subl(7);
     CamelliaSubkeyR(6) = subr(5) ^ subr(7);
     tl = subl(10) ^ (subr(10) & ~subr(8));
-    dw = tl & subl(8),  /* FL(kl1) */
-	tr = subr(10) ^ CAMELLIA_RL1(dw);
-    CamelliaSubkeyL(7) = subl(6) ^ tl; /* round 6 */
+    dw = tl & subl(8), tr = subr(10) ^ CAMELLIA_RL1(dw);
+    CamelliaSubkeyL(7) = subl(6) ^ tl;
     CamelliaSubkeyR(7) = subr(6) ^ tr;
-    CamelliaSubkeyL(8) = subl(8);       /* FL(kl1) */
+    CamelliaSubkeyL(8) = subl(8);
     CamelliaSubkeyR(8) = subr(8);
-    CamelliaSubkeyL(9) = subl(9);       /* FLinv(kl2) */
+    CamelliaSubkeyL(9) = subl(9);
     CamelliaSubkeyR(9) = subr(9);
     tl = subl(7) ^ (subr(7) & ~subr(9));
-    dw = tl & subl(9),  /* FLinv(kl2) */
-	tr = subr(7) ^ CAMELLIA_RL1(dw);
-    CamelliaSubkeyL(10) = tl ^ subl(11); /* round 7 */
+    dw = tl & subl(9), tr = subr(7) ^ CAMELLIA_RL1(dw);
+    CamelliaSubkeyL(10) = tl ^ subl(11);
     CamelliaSubkeyR(10) = tr ^ subr(11);
-    CamelliaSubkeyL(11) = subl(10) ^ subl(12); /* round 8 */
+    CamelliaSubkeyL(11) = subl(10) ^ subl(12);
     CamelliaSubkeyR(11) = subr(10) ^ subr(12);
-    CamelliaSubkeyL(12) = subl(11) ^ subl(13); /* round 9 */
+    CamelliaSubkeyL(12) = subl(11) ^ subl(13);
     CamelliaSubkeyR(12) = subr(11) ^ subr(13);
-    CamelliaSubkeyL(13) = subl(12) ^ subl(14); /* round 10 */
+    CamelliaSubkeyL(13) = subl(12) ^ subl(14);
     CamelliaSubkeyR(13) = subr(12) ^ subr(14);
-    CamelliaSubkeyL(14) = subl(13) ^ subl(15); /* round 11 */
+    CamelliaSubkeyL(14) = subl(13) ^ subl(15);
     CamelliaSubkeyR(14) = subr(13) ^ subr(15);
     tl = subl(18) ^ (subr(18) & ~subr(16));
-    dw = tl & subl(16), /* FL(kl3) */
-	tr = subr(18) ^ CAMELLIA_RL1(dw);
-    CamelliaSubkeyL(15) = subl(14) ^ tl; /* round 12 */
+    dw = tl & subl(16), tr = subr(18) ^ CAMELLIA_RL1(dw);
+    CamelliaSubkeyL(15) = subl(14) ^ tl;
     CamelliaSubkeyR(15) = subr(14) ^ tr;
-    CamelliaSubkeyL(16) = subl(16);     /* FL(kl3) */
+    CamelliaSubkeyL(16) = subl(16);
     CamelliaSubkeyR(16) = subr(16);
-    CamelliaSubkeyL(17) = subl(17);     /* FLinv(kl4) */
+    CamelliaSubkeyL(17) = subl(17);
     CamelliaSubkeyR(17) = subr(17);
     tl = subl(15) ^ (subr(15) & ~subr(17));
-    dw = tl & subl(17), /* FLinv(kl4) */
-	tr = subr(15) ^ CAMELLIA_RL1(dw);
-    CamelliaSubkeyL(18) = tl ^ subl(19); /* round 13 */
+    dw = tl & subl(17), tr = subr(15) ^ CAMELLIA_RL1(dw);
+    CamelliaSubkeyL(18) = tl ^ subl(19);
     CamelliaSubkeyR(18) = tr ^ subr(19);
-    CamelliaSubkeyL(19) = subl(18) ^ subl(20); /* round 14 */
+    CamelliaSubkeyL(19) = subl(18) ^ subl(20);
     CamelliaSubkeyR(19) = subr(18) ^ subr(20);
-    CamelliaSubkeyL(20) = subl(19) ^ subl(21); /* round 15 */
+    CamelliaSubkeyL(20) = subl(19) ^ subl(21);
     CamelliaSubkeyR(20) = subr(19) ^ subr(21);
-    CamelliaSubkeyL(21) = subl(20) ^ subl(22); /* round 16 */
+    CamelliaSubkeyL(21) = subl(20) ^ subl(22);
     CamelliaSubkeyR(21) = subr(20) ^ subr(22);
-    CamelliaSubkeyL(22) = subl(21) ^ subl(23); /* round 17 */
+    CamelliaSubkeyL(22) = subl(21) ^ subl(23);
     CamelliaSubkeyR(22) = subr(21) ^ subr(23);
-    tl = subl(26) ^ (subr(26)
-		     & ~subr(24));
-    dw = tl & subl(24), /* FL(kl5) */
-	tr = subr(26) ^ CAMELLIA_RL1(dw);
-    CamelliaSubkeyL(23) = subl(22) ^ tl; /* round 18 */
+    tl = subl(26) ^ (subr(26) & ~subr(24));
+    dw = tl & subl(24), tr = subr(26) ^ CAMELLIA_RL1(dw);
+    CamelliaSubkeyL(23) = subl(22) ^ tl;
     CamelliaSubkeyR(23) = subr(22) ^ tr;
-    CamelliaSubkeyL(24) = subl(24);     /* FL(kl5) */
+    CamelliaSubkeyL(24) = subl(24);
     CamelliaSubkeyR(24) = subr(24);
-    CamelliaSubkeyL(25) = subl(25);     /* FLinv(kl6) */
+    CamelliaSubkeyL(25) = subl(25);
     CamelliaSubkeyR(25) = subr(25);
-    tl = subl(23) ^ (subr(23) &
-		     ~subr(25));
-    dw = tl & subl(25), /* FLinv(kl6) */
-	tr = subr(23) ^ CAMELLIA_RL1(dw);
-    CamelliaSubkeyL(26) = tl ^ subl(27); /* round 19 */
+    tl = subl(23) ^ (subr(23) &  ~subr(25));
+    dw = tl & subl(25), tr = subr(23) ^ CAMELLIA_RL1(dw);
+    CamelliaSubkeyL(26) = tl ^ subl(27);
     CamelliaSubkeyR(26) = tr ^ subr(27);
-    CamelliaSubkeyL(27) = subl(26) ^ subl(28); /* round 20 */
+    CamelliaSubkeyL(27) = subl(26) ^ subl(28);
     CamelliaSubkeyR(27) = subr(26) ^ subr(28);
-    CamelliaSubkeyL(28) = subl(27) ^ subl(29); /* round 21 */
+    CamelliaSubkeyL(28) = subl(27) ^ subl(29);
     CamelliaSubkeyR(28) = subr(27) ^ subr(29);
-    CamelliaSubkeyL(29) = subl(28) ^ subl(30); /* round 22 */
+    CamelliaSubkeyL(29) = subl(28) ^ subl(30);
     CamelliaSubkeyR(29) = subr(28) ^ subr(30);
-    CamelliaSubkeyL(30) = subl(29) ^ subl(31); /* round 23 */
+    CamelliaSubkeyL(30) = subl(29) ^ subl(31);
     CamelliaSubkeyR(30) = subr(29) ^ subr(31);
-    CamelliaSubkeyL(31) = subl(30);     /* round 24 */
+    CamelliaSubkeyL(31) = subl(30);
     CamelliaSubkeyR(31) = subr(30);
-    CamelliaSubkeyL(32) = subl(32) ^ subl(31); /* kw3 */
+    CamelliaSubkeyL(32) = subl(32) ^ subl(31);
     CamelliaSubkeyR(32) = subr(32) ^ subr(31);
 
     /* apply the inverse of the last half of P-function */
-    dw = CamelliaSubkeyL(2) ^ CamelliaSubkeyR(2),
-	dw = CAMELLIA_RL8(dw);/* round 1 */
-    CamelliaSubkeyR(2) = CamelliaSubkeyL(2) ^ dw,
-	CamelliaSubkeyL(2) = dw;
-    dw = CamelliaSubkeyL(3) ^ CamelliaSubkeyR(3),
-	dw = CAMELLIA_RL8(dw);/* round 2 */
-    CamelliaSubkeyR(3) = CamelliaSubkeyL(3) ^ dw,
-	CamelliaSubkeyL(3) = dw;
-    dw = CamelliaSubkeyL(4) ^ CamelliaSubkeyR(4),
-	dw = CAMELLIA_RL8(dw);/* round 3 */
-    CamelliaSubkeyR(4) = CamelliaSubkeyL(4) ^ dw,
-	CamelliaSubkeyL(4) = dw;
-    dw = CamelliaSubkeyL(5) ^ CamelliaSubkeyR(5),
-	dw = CAMELLIA_RL8(dw);/* round 4 */
-    CamelliaSubkeyR(5) = CamelliaSubkeyL(5) ^ dw,
-	CamelliaSubkeyL(5) = dw;
-    dw = CamelliaSubkeyL(6) ^ CamelliaSubkeyR(6),
-	dw = CAMELLIA_RL8(dw);/* round 5 */
-    CamelliaSubkeyR(6) = CamelliaSubkeyL(6) ^ dw,
-	CamelliaSubkeyL(6) = dw;
-    dw = CamelliaSubkeyL(7) ^ CamelliaSubkeyR(7),
-	dw = CAMELLIA_RL8(dw);/* round 6 */
-    CamelliaSubkeyR(7) = CamelliaSubkeyL(7) ^ dw,
-	CamelliaSubkeyL(7) = dw;
-    dw = CamelliaSubkeyL(10) ^ CamelliaSubkeyR(10),
-	dw = CAMELLIA_RL8(dw);/* round 7 */
-    CamelliaSubkeyR(10) = CamelliaSubkeyL(10) ^ dw,
-	CamelliaSubkeyL(10) = dw;
-    dw = CamelliaSubkeyL(11) ^ CamelliaSubkeyR(11),
-	dw = CAMELLIA_RL8(dw);/* round 8 */
-    CamelliaSubkeyR(11) = CamelliaSubkeyL(11) ^ dw,
-	CamelliaSubkeyL(11) = dw;
-    dw = CamelliaSubkeyL(12) ^ CamelliaSubkeyR(12),
-	dw = CAMELLIA_RL8(dw);/* round 9 */
-    CamelliaSubkeyR(12) = CamelliaSubkeyL(12) ^ dw,
-	CamelliaSubkeyL(12) = dw;
-    dw = CamelliaSubkeyL(13) ^ CamelliaSubkeyR(13),
-	dw = CAMELLIA_RL8(dw);/* round 10 */
-    CamelliaSubkeyR(13) = CamelliaSubkeyL(13) ^ dw,
-	CamelliaSubkeyL(13) = dw;
-    dw = CamelliaSubkeyL(14) ^ CamelliaSubkeyR(14),
-	dw = CAMELLIA_RL8(dw);/* round 11 */
-    CamelliaSubkeyR(14) = CamelliaSubkeyL(14) ^ dw,
-	CamelliaSubkeyL(14) = dw;
-    dw = CamelliaSubkeyL(15) ^ CamelliaSubkeyR(15),
-	dw = CAMELLIA_RL8(dw);/* round 12 */
-    CamelliaSubkeyR(15) = CamelliaSubkeyL(15) ^ dw,
-	CamelliaSubkeyL(15) = dw;
-    dw = CamelliaSubkeyL(18) ^ CamelliaSubkeyR(18),
-	dw = CAMELLIA_RL8(dw);/* round 13 */
-    CamelliaSubkeyR(18) = CamelliaSubkeyL(18) ^ dw,
-	CamelliaSubkeyL(18) = dw;
-    dw = CamelliaSubkeyL(19) ^ CamelliaSubkeyR(19),
-	dw = CAMELLIA_RL8(dw);/* round 14 */
-    CamelliaSubkeyR(19) = CamelliaSubkeyL(19) ^ dw,
-	CamelliaSubkeyL(19) = dw;
-    dw = CamelliaSubkeyL(20) ^ CamelliaSubkeyR(20),
-	dw = CAMELLIA_RL8(dw);/* round 15 */
-    CamelliaSubkeyR(20) = CamelliaSubkeyL(20) ^ dw,
-	CamelliaSubkeyL(20) = dw;
-    dw = CamelliaSubkeyL(21) ^ CamelliaSubkeyR(21),
-	dw = CAMELLIA_RL8(dw);/* round 16 */
-    CamelliaSubkeyR(21) = CamelliaSubkeyL(21) ^ dw,
-	CamelliaSubkeyL(21) = dw;
-    dw = CamelliaSubkeyL(22) ^ CamelliaSubkeyR(22),
-	dw = CAMELLIA_RL8(dw);/* round 17 */
-    CamelliaSubkeyR(22) = CamelliaSubkeyL(22) ^ dw,
-	CamelliaSubkeyL(22) = dw;
-    dw = CamelliaSubkeyL(23) ^ CamelliaSubkeyR(23),
-	dw = CAMELLIA_RL8(dw);/* round 18 */
-    CamelliaSubkeyR(23) = CamelliaSubkeyL(23) ^ dw,
-	CamelliaSubkeyL(23) = dw;
-    dw = CamelliaSubkeyL(26) ^ CamelliaSubkeyR(26),
-	dw = CAMELLIA_RL8(dw);/* round 19 */
-    CamelliaSubkeyR(26) = CamelliaSubkeyL(26) ^ dw,
-	CamelliaSubkeyL(26) = dw;
-    dw = CamelliaSubkeyL(27) ^ CamelliaSubkeyR(27),
-	dw = CAMELLIA_RL8(dw);/* round 20 */
-    CamelliaSubkeyR(27) = CamelliaSubkeyL(27) ^ dw,
-	CamelliaSubkeyL(27) = dw;
-    dw = CamelliaSubkeyL(28) ^ CamelliaSubkeyR(28),
-	dw = CAMELLIA_RL8(dw);/* round 21 */
-    CamelliaSubkeyR(28) = CamelliaSubkeyL(28) ^ dw,
-	CamelliaSubkeyL(28) = dw;
-    dw = CamelliaSubkeyL(29) ^ CamelliaSubkeyR(29),
-	dw = CAMELLIA_RL8(dw);/* round 22 */
-    CamelliaSubkeyR(29) = CamelliaSubkeyL(29) ^ dw,
-	CamelliaSubkeyL(29) = dw;
-    dw = CamelliaSubkeyL(30) ^ CamelliaSubkeyR(30),
-	dw = CAMELLIA_RL8(dw);/* round 23 */
-    CamelliaSubkeyR(30) = CamelliaSubkeyL(30) ^ dw,
-	CamelliaSubkeyL(30) = dw;
-    dw = CamelliaSubkeyL(31) ^ CamelliaSubkeyR(31),
-	dw = CAMELLIA_RL8(dw);/* round 24 */
-    CamelliaSubkeyR(31) = CamelliaSubkeyL(31) ^ dw,
-	CamelliaSubkeyL(31) = dw;
-
+    dw = CamelliaSubkeyL(2) ^ CamelliaSubkeyR(2), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(2) = CamelliaSubkeyL(2) ^ dw, CamelliaSubkeyL(2) = dw;
+    dw = CamelliaSubkeyL(3) ^ CamelliaSubkeyR(3), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(3) = CamelliaSubkeyL(3) ^ dw, CamelliaSubkeyL(3) = dw;
+    dw = CamelliaSubkeyL(4) ^ CamelliaSubkeyR(4), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(4) = CamelliaSubkeyL(4) ^ dw, CamelliaSubkeyL(4) = dw;
+    dw = CamelliaSubkeyL(5) ^ CamelliaSubkeyR(5), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(5) = CamelliaSubkeyL(5) ^ dw, CamelliaSubkeyL(5) = dw;
+    dw = CamelliaSubkeyL(6) ^ CamelliaSubkeyR(6), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(6) = CamelliaSubkeyL(6) ^ dw, CamelliaSubkeyL(6) = dw;
+    dw = CamelliaSubkeyL(7) ^ CamelliaSubkeyR(7), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(7) = CamelliaSubkeyL(7) ^ dw, CamelliaSubkeyL(7) = dw;
+    dw = CamelliaSubkeyL(10) ^ CamelliaSubkeyR(10), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(10) = CamelliaSubkeyL(10) ^ dw, CamelliaSubkeyL(10) = dw;
+    dw = CamelliaSubkeyL(11) ^ CamelliaSubkeyR(11), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(11) = CamelliaSubkeyL(11) ^ dw, CamelliaSubkeyL(11) = dw;
+    dw = CamelliaSubkeyL(12) ^ CamelliaSubkeyR(12), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(12) = CamelliaSubkeyL(12) ^ dw, CamelliaSubkeyL(12) = dw;
+    dw = CamelliaSubkeyL(13) ^ CamelliaSubkeyR(13), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(13) = CamelliaSubkeyL(13) ^ dw, CamelliaSubkeyL(13) = dw;
+    dw = CamelliaSubkeyL(14) ^ CamelliaSubkeyR(14), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(14) = CamelliaSubkeyL(14) ^ dw, CamelliaSubkeyL(14) = dw;
+    dw = CamelliaSubkeyL(15) ^ CamelliaSubkeyR(15), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(15) = CamelliaSubkeyL(15) ^ dw, CamelliaSubkeyL(15) = dw;
+    dw = CamelliaSubkeyL(18) ^ CamelliaSubkeyR(18), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(18) = CamelliaSubkeyL(18) ^ dw, CamelliaSubkeyL(18) = dw;
+    dw = CamelliaSubkeyL(19) ^ CamelliaSubkeyR(19), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(19) = CamelliaSubkeyL(19) ^ dw, CamelliaSubkeyL(19) = dw;
+    dw = CamelliaSubkeyL(20) ^ CamelliaSubkeyR(20), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(20) = CamelliaSubkeyL(20) ^ dw, CamelliaSubkeyL(20) = dw;
+    dw = CamelliaSubkeyL(21) ^ CamelliaSubkeyR(21), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(21) = CamelliaSubkeyL(21) ^ dw, CamelliaSubkeyL(21) = dw;
+    dw = CamelliaSubkeyL(22) ^ CamelliaSubkeyR(22), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(22) = CamelliaSubkeyL(22) ^ dw, CamelliaSubkeyL(22) = dw;
+    dw = CamelliaSubkeyL(23) ^ CamelliaSubkeyR(23), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(23) = CamelliaSubkeyL(23) ^ dw, CamelliaSubkeyL(23) = dw;
+    dw = CamelliaSubkeyL(26) ^ CamelliaSubkeyR(26), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(26) = CamelliaSubkeyL(26) ^ dw, CamelliaSubkeyL(26) = dw;
+    dw = CamelliaSubkeyL(27) ^ CamelliaSubkeyR(27), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(27) = CamelliaSubkeyL(27) ^ dw, CamelliaSubkeyL(27) = dw;
+    dw = CamelliaSubkeyL(28) ^ CamelliaSubkeyR(28), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(28) = CamelliaSubkeyL(28) ^ dw, CamelliaSubkeyL(28) = dw;
+    dw = CamelliaSubkeyL(29) ^ CamelliaSubkeyR(29), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(29) = CamelliaSubkeyL(29) ^ dw, CamelliaSubkeyL(29) = dw;
+    dw = CamelliaSubkeyL(30) ^ CamelliaSubkeyR(30), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(30) = CamelliaSubkeyL(30) ^ dw, CamelliaSubkeyL(30) = dw;
+    dw = CamelliaSubkeyL(31) ^ CamelliaSubkeyR(31), dw = CAMELLIA_RL8(dw);
+    CamelliaSubkeyR(31) = CamelliaSubkeyL(31) ^ dw,CamelliaSubkeyL(31) = dw;
     
     return;
 }
 
-void camellia_setup192(const unsigned char *key, uint32_t *subkey)
+void camellia_setup192(const unsigned char *key, u32 *subkey)
 {
     unsigned char kk[32];
-    uint32_t krll, krlr, krrl,krrr;
+    u32 krll, krlr, krrl,krrr;
 
     memcpy(kk, key, 24);
     memcpy((unsigned char *)&krll, key+16,4);
@@ -1280,12 +960,13 @@ void camellia_setup192(const unsigned char *key, uint32_t *subkey)
 
 /**
  * Stuff related to camellia encryption/decryption
+ *
+ * "io" must be 4byte aligned and big-endian data.
  */
-void camellia_encrypt128(const uint32_t *subkey, uint32_t *io)
+void camellia_encrypt128(const u32 *subkey, u32 *io)
 {
-    uint32_t il, ir, t0, t1;
+    u32 il, ir, t0, t1;
 
-    SWAP4WORD(io);
     /* pre whitening but absorb kw2*/
     io[0] ^= CamelliaSubkeyL(0);
     io[1] ^= CamelliaSubkeyR(0);
@@ -1368,17 +1049,14 @@ void camellia_encrypt128(const uint32_t *subkey, uint32_t *io)
     io[1] = io[3];
     io[2] = t0;
     io[3] = t1;
-    SWAP4WORD(io);
 	
     return;
 }
 
-void camellia_decrypt128(const uint32_t *subkey, uint32_t *io)
+void camellia_decrypt128(const u32 *subkey, u32 *io)
 {
-    uint32_t il,ir,t0,t1;               /* temporary valiables */
+    u32 il,ir,t0,t1;               /* temporary valiables */
     
-    SWAP4WORD(io);
-
     /* pre whitening but absorb kw2*/
     io[0] ^= CamelliaSubkeyL(24);
     io[1] ^= CamelliaSubkeyR(24);
@@ -1461,7 +1139,6 @@ void camellia_decrypt128(const uint32_t *subkey, uint32_t *io)
     io[1] = io[3];
     io[2] = t0;
     io[3] = t1;
-    SWAP4WORD(io);
 
     return;
 }
@@ -1469,11 +1146,9 @@ void camellia_decrypt128(const uint32_t *subkey, uint32_t *io)
 /**
  * stuff for 192 and 256bit encryption/decryption
  */
-void camellia_encrypt256(const uint32_t *subkey, uint32_t *io)
+void camellia_encrypt256(const u32 *subkey, u32 *io)
 {
-    uint32_t il,ir,t0,t1;           /* temporary valiables */
-
-    SWAP4WORD(io);
+    u32 il,ir,t0,t1;           /* temporary valiables */
 
     /* pre whitening but absorb kw2*/
     io[0] ^= CamelliaSubkeyL(0);
@@ -1581,16 +1256,14 @@ void camellia_encrypt256(const uint32_t *subkey, uint32_t *io)
     io[1] = io[3];
     io[2] = t0;
     io[3] = t1;
-    SWAP4WORD(io);
 
     return;
 }
 
-void camellia_decrypt256(const uint32_t *subkey, uint32_t *io)
+void camellia_decrypt256(const u32 *subkey, u32 *io)
 {
-    uint32_t il,ir,t0,t1;           /* temporary valiables */
+    u32 il,ir,t0,t1;           /* temporary valiables */
 
-    SWAP4WORD(io);
     /* pre whitening but absorb kw2*/
     io[0] ^= CamelliaSubkeyL(32);
     io[1] ^= CamelliaSubkeyR(32);
@@ -1697,12 +1370,14 @@ void camellia_decrypt256(const uint32_t *subkey, uint32_t *io)
     io[1] = io[3];
     io[2] = t0;
     io[3] = t1;
-    SWAP4WORD(io);
 
     return;
 }
 
-
+/***
+ *
+ * API for compatibility
+ */
 
 void Camellia_Ekeygen(const int keyBitLength, 
 		      const unsigned char *rawKey, 
@@ -1729,9 +1404,12 @@ void Camellia_EncryptBlock(const int keyBitLength,
 			   const KEY_TABLE_TYPE keyTable, 
 			   unsigned char *ciphertext)
 {
-    uint32_t tmp[4];
+    u32 tmp[4];
 
-    memcpy((unsigned char *)tmp, plaintext, CAMELLIA_BLOCK_SIZE);
+    tmp[0] = GETU32(plaintext);
+    tmp[1] = GETU32(plaintext + 4);
+    tmp[2] = GETU32(plaintext + 8);
+    tmp[3] = GETU32(plaintext + 12);
 
     switch (keyBitLength) {
     case 128:
@@ -1746,7 +1424,10 @@ void Camellia_EncryptBlock(const int keyBitLength,
 	break;
     }
 
-    memcpy(ciphertext, (unsigned char *)tmp, CAMELLIA_BLOCK_SIZE);
+    PUTU32(ciphertext, tmp[0]);
+    PUTU32(ciphertext + 4, tmp[1]);
+    PUTU32(ciphertext + 8, tmp[2]);
+    PUTU32(ciphertext + 12, tmp[3]);
 }
 
 void Camellia_DecryptBlock(const int keyBitLength, 
@@ -1754,9 +1435,12 @@ void Camellia_DecryptBlock(const int keyBitLength,
 			   const KEY_TABLE_TYPE keyTable, 
 			   unsigned char *plaintext)
 {
-    uint32_t tmp[4];
+    u32 tmp[4];
 
-    memcpy((unsigned char *)tmp, ciphertext, CAMELLIA_BLOCK_SIZE);
+    tmp[0] = GETU32(ciphertext);
+    tmp[1] = GETU32(ciphertext + 4);
+    tmp[2] = GETU32(ciphertext + 8);
+    tmp[3] = GETU32(ciphertext + 12);
 
     switch (keyBitLength) {
     case 128:
@@ -1770,5 +1454,8 @@ void Camellia_DecryptBlock(const int keyBitLength,
     default:
 	break;
     }
-    memcpy(plaintext, (unsigned char *)tmp, CAMELLIA_BLOCK_SIZE);
+    PUTU32(plaintext, tmp[0]);
+    PUTU32(plaintext + 4, tmp[1]);
+    PUTU32(plaintext + 8, tmp[2]);
+    PUTU32(plaintext + 12, tmp[3]);
 }

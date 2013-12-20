@@ -1,6 +1,6 @@
-/* camellia.h	ver 1.1.0
+/* camellia.h	ver 1.2.0
  *
- * Copyright (C) 2006
+ * Copyright (C) 2006,2007
  * NTT (Nippon Telegraph and Telephone Corporation).
  *
  * This program is free software; you can redistribute it and/or
