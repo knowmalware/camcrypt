@@ -1,6 +1,3 @@
-# Copyright (c) 2013, The MITRE Corporation. All rights reserved.
-# See LICENSE.txt for complete terms.
-
 from setuptools import Extension, setup, find_packages
 
 import camcrypt
