@@ -4,8 +4,9 @@ the Camellia cryptographic cipher.
 """
 
 import ctypes
+from os.path import dirname, join
 
-_VERSION = "1.1.0"
+_VERSION = "1.2.0"
 
 def version():
   """ Return the library version string.
@@ -13,12 +14,14 @@ def version():
   return _VERSION
 
 
+DEFAULT_PATH = join(dirname(__file__), 'camellia.so')
+
 class CamCrypt:
 
   _BLOCK_SIZE = 16
   _TABLE_BYTE_LEN = 272
 
-  def __init__(self, libraryPath):
+  def __init__(self, libraryPath=DEFAULT_PATH):
     """ To instantiate an instance of this class, provide the full
     path to the camellia shared library (camellia.so) that it
     will reference.
