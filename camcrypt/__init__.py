@@ -6,6 +6,8 @@ the Camellia cryptographic cipher.
 import ctypes
 from os.path import dirname, join
 
+__all__ = ['CamCrypt', 'version', 'BLOCK_SIZE', 'TABLE_BYTE_LEN']
+
 _VERSION = "1.2.0"
 
 def version():
@@ -16,10 +18,11 @@ def version():
 
 DEFAULT_PATH = join(dirname(__file__), 'camellia.so')
 
-class CamCrypt:
+BLOCK_SIZE = 16
+TABLE_BYTE_LEN = 272
 
-  _BLOCK_SIZE = 16
-  _TABLE_BYTE_LEN = 272
+
+class CamCrypt(object):
 
   def __init__(self, libraryPath=DEFAULT_PATH):
     """ To instantiate an instance of this class, provide the full
@@ -52,25 +55,24 @@ class CamCrypt:
     self.bitlen = keyBitLength
     if len(rawKey) <= 0 or len(rawKey) > self.bitlen/8:
       raise Exception("rawKey must be less than or equal to keyBitLength/8 (%d) characters long" % (self.bitlen/8))
-    keytable = ctypes.create_string_buffer(self._TABLE_BYTE_LEN)
+    keytable = ctypes.create_string_buffer(TABLE_BYTE_LEN)
     self.ekeygen(self.bitlen, rawKey, keytable)
     self.keytable = keytable
 
   def encrypt(self, plainText):
-    """ Raises an exception if the plainText is not _BLOCK_SIZE bytes.
+    """ Raises an exception if the plainText is not BLOCK_SIZE bytes.
     """
-    if len(plainText) != self._BLOCK_SIZE:
-      raise Exception("encryption and decryption only occur on blocks of %d bytes at a time" % self._BLOCK_SIZE)
-    cipher = ctypes.create_string_buffer(self._BLOCK_SIZE)
+    if len(plainText) != BLOCK_SIZE:
+      raise Exception("encryption and decryption only occur on blocks of %d bytes at a time" % BLOCK_SIZE)
+    cipher = ctypes.create_string_buffer(BLOCK_SIZE)
     self.encblock(self.bitlen, plainText, self.keytable, cipher)
     return cipher.raw
 
   def decrypt(self, cipherText):
-    """ Raises an exception if the cipherText is not _BLOCK_SIZE bytes.
+    """ Raises an exception if the cipherText is not BLOCK_SIZE bytes.
     """
-    if len(cipherText) != self._BLOCK_SIZE:
-      raise Exception("encryption and decryption only occur on blocks of %d bytes at a time" % self._BLOCK_SIZE)
-    plain = ctypes.create_string_buffer(self._BLOCK_SIZE)
+    if len(cipherText) != BLOCK_SIZE:
+      raise Exception("encryption and decryption only occur on blocks of %d bytes at a time" % BLOCK_SIZE)
+    plain = ctypes.create_string_buffer(BLOCK_SIZE)
     self.decblock(self.bitlen, cipherText, self.keytable, plain)
     return plain.raw
-
