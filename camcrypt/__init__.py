@@ -59,20 +59,46 @@ class CamCrypt(object):
     self.ekeygen(self.bitlen, rawKey, keytable)
     self.keytable = keytable
 
-  def encrypt(self, plainText):
-    """ Raises an exception if the plainText is not BLOCK_SIZE bytes.
+  def encrypt_block(self, plainText):
+    """Encrypt a 16-byte block of data.
+
+    NOTE: This function was formerly called `encrypt`, but was changed when
+    support for encrypting arbitrary-length strings was added.
+
+    Args:
+        plainText (str): 16-byte data.
+
+    Returns:
+        16-byte str.
+
+    Raises:
+        ValueError if `plainText` is not BLOCK_SIZE (i.e. 16) bytes.
     """
     if len(plainText) != BLOCK_SIZE:
-      raise Exception("encryption and decryption only occur on blocks of %d bytes at a time" % BLOCK_SIZE)
+      raise ValueError("plainText must be %d bytes long (received %d bytes)" %
+                       (BLOCK_SIZE, len(plainText)))
     cipher = ctypes.create_string_buffer(BLOCK_SIZE)
     self.encblock(self.bitlen, plainText, self.keytable, cipher)
     return cipher.raw
 
-  def decrypt(self, cipherText):
-    """ Raises an exception if the cipherText is not BLOCK_SIZE bytes.
+  def decrypt_block(self, cipherText):
+    """Decrypt a 16-byte block of data.
+
+    NOTE: This function was formerly called `decrypt`, but was changed when
+    support for decrypting arbitrary-length strings was added.
+
+    Args:
+        cipherText (str): 16-byte data.
+
+    Returns:
+        16-byte str.
+
+    Raises:
+        ValueError if `cipherText` is not BLOCK_SIZE (i.e. 16) bytes.
     """
     if len(cipherText) != BLOCK_SIZE:
-      raise Exception("encryption and decryption only occur on blocks of %d bytes at a time" % BLOCK_SIZE)
+      raise ValueError("cipherText must be %d bytes long (received %d bytes)" %
+                       (BLOCK_SIZE, len(cipherText)))
     plain = ctypes.create_string_buffer(BLOCK_SIZE)
     self.decblock(self.bitlen, cipherText, self.keytable, plain)
     return plain.raw
