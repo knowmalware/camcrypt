@@ -22,6 +22,11 @@ BLOCK_SIZE = 16
 TABLE_BYTE_LEN = 272
 
 
+def zero_pad(buff, length):
+  """Pad `buff` with trailing zeros to a total of `length` bytes long."""
+  return buff + '\x00' * (length - len(buff))
+
+
 class CamCrypt(object):
 
   def __init__(self, libraryPath=DEFAULT_PATH):
@@ -58,6 +63,58 @@ class CamCrypt(object):
     keytable = ctypes.create_string_buffer(TABLE_BYTE_LEN)
     self.ekeygen(self.bitlen, rawKey, keytable)
     self.keytable = keytable
+
+  def encrypt(self, plainText):
+    """Encrypt an arbitrary-length block of data.
+
+    NOTE: This function formerly worked only on 16-byte blocks of `plainText`.
+    code that assumed this should still work fine, but can optionally be
+    modified to call `encrypt_block` instead.
+
+    Args:
+        plainText (str): data to encrypt. If the data is not a multiple of 16
+            bytes long, it will be padded with null (0x00) bytes until it is.
+
+    Returns:
+        encrypted data. Note that this will always be a multiple of 16 bytes
+            long.
+    """
+    encryptedResult = ''
+    for index in range(0, len(plainText), BLOCK_SIZE):
+      block = plainText[index:index + BLOCK_SIZE]
+      # Pad to required length if needed
+      if len(block) < BLOCK_SIZE:
+        block = zero_pad(block, BLOCK_SIZE)
+      encryptedResult += self.encrypt_block(block)
+    return encryptedResult
+
+  def decrypt(self, cipherText):
+    """Decrypt an arbitrary-length block of data.
+
+    NOTE: This function formerly worked only on 16-byte blocks of `cipherText`.
+    code that assumed this should still work fine, but can optionally be
+    modified to call `decrypt_block` instead.
+
+    Args:
+        cipherText (str): data to decrypt. If the data is not a multiple of 16
+            bytes long, it will be padded with null (0x00) bytes until it is.
+            WARNING: This is almost certainty never need to happen for
+            correctly-encrypted data.
+
+    Returns:
+        decrypted data. Note that this will always be a multiple of 16 bytes
+            long. If the original data was not a multiple of 16 bytes, the
+            result will contain trailing null bytes, which can be removed with
+            `.rstrip('\x00')`
+    """
+    decryptedResult = ''
+    for index in range(0, len(cipherText), BLOCK_SIZE):
+      block = cipherText[index:index + BLOCK_SIZE]
+      # Pad to required length if needed
+      if len(block) < BLOCK_SIZE:
+        block = zero_pad(block, BLOCK_SIZE)
+      decryptedResult += self.decrypt_block(block)
+    return decryptedResult
 
   def encrypt_block(self, plainText):
     """Encrypt a 16-byte block of data.
