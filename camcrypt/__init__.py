@@ -20,6 +20,7 @@ DEFAULT_PATH = join(dirname(__file__), 'camellia.so')
 
 BLOCK_SIZE = 16
 TABLE_BYTE_LEN = 272
+ACCEPTABLE_KEY_LENGTHS = [128, 192, 256]
 
 
 def zero_pad(buff, length):
@@ -55,11 +56,12 @@ class CamCrypt(object):
     Does not return any value.
     Raises an exception if the arguments are not sane.
     """
-    if keyBitLength != 128 and keyBitLength != 192 and keyBitLength != 256:
+    if keyBitLength not in ACCEPTABLE_KEY_LENGTHS:
       raise Exception("keyBitLength must be 128, 192, or 256")
     self.bitlen = keyBitLength
     if len(rawKey) <= 0 or len(rawKey) > self.bitlen/8:
       raise Exception("rawKey must be less than or equal to keyBitLength/8 (%d) characters long" % (self.bitlen/8))
+    rawKey = zero_pad(rawKey, self.bitlen/8)
     keytable = ctypes.create_string_buffer(TABLE_BYTE_LEN)
     self.ekeygen(self.bitlen, rawKey, keytable)
     self.keytable = keytable
