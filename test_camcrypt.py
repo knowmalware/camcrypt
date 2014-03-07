@@ -54,5 +54,15 @@ class CamCryptTests(unittest.TestCase):
         c.keygen(128, "\x80" + "\x00" * 15)
         self.assertRaises(ValueError, c.encrypt_block, 'a')
 
+    def test_quick_init(self):
+        key="\x80" + "\x00" * 15
+        c = CamCrypt(keylen=128, key=key)
+        expected = "6c227f749319a3aa7da235a9bba05a2c"
+        self.assertEqual(expected, c.encrypt(ZERO_BUF).encode("hex"))
+
+    def test_uninitialized(self):
+        c = CamCrypt()
+        self.assertRaises(TypeError, c.encrypt_block, ZERO_BUF)
+
 if __name__ == '__main__':
     unittest.main()

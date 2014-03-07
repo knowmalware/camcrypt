@@ -30,14 +30,17 @@ def zero_pad(buff, length):
 
 class CamCrypt(object):
 
-  def __init__(self, libraryPath=DEFAULT_PATH):
+  def __init__(self, libraryPath=DEFAULT_PATH, keylen=None, key=None):
     """ To instantiate an instance of this class, provide the full
     path to the camellia shared library (camellia.so) that it
     will reference.
     Raises an exception if the libraryPath is not specified or
     there is a problem loading the library. 
     """
+    self.initialized = False
     self._loadlib(libraryPath)
+    if keylen and key:
+        self.keygen(keylen, key)
   
   def _loadlib(self, libraryPath):
     self._SHARED_LIBRARY = libraryPath
@@ -65,6 +68,7 @@ class CamCrypt(object):
     keytable = ctypes.create_string_buffer(TABLE_BYTE_LEN)
     self.ekeygen(self.bitlen, rawKey, keytable)
     self.keytable = keytable
+    self.initialized = True
 
   def encrypt(self, plainText):
     """Encrypt an arbitrary-length block of data.
@@ -131,8 +135,11 @@ class CamCrypt(object):
         16-byte str.
 
     Raises:
+        TypeError if CamCrypt object has not been initialized.
         ValueError if `plainText` is not BLOCK_SIZE (i.e. 16) bytes.
     """
+    if not self.initialized:
+      raise TypeError("CamCrypt object has not been initialized")
     if len(plainText) != BLOCK_SIZE:
       raise ValueError("plainText must be %d bytes long (received %d bytes)" %
                        (BLOCK_SIZE, len(plainText)))
@@ -153,8 +160,11 @@ class CamCrypt(object):
         16-byte str.
 
     Raises:
+        TypeError if CamCrypt object has not been initialized.
         ValueError if `cipherText` is not BLOCK_SIZE (i.e. 16) bytes.
     """
+    if not self.initialized:
+      raise TypeError("CamCrypt object has not been initialized")
     if len(cipherText) != BLOCK_SIZE:
       raise ValueError("cipherText must be %d bytes long (received %d bytes)" %
                        (BLOCK_SIZE, len(cipherText)))

@@ -33,10 +33,7 @@ def _get_crypto(keylen, hexkey, key):
     if hexkey:
         key = key.decode('hex')
 
-    c = camcrypt.CamCrypt()
-    c.keygen(keylen, key)
-
-    return c
+    return camcrypt.CamCrypt(keylen=keylen, key=key)
 
 def _get_data(filenames):
     """Read data from file(s) or STDIN.
