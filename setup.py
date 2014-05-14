@@ -10,6 +10,10 @@ setup(
     description="Python wrapper around the Camellia encryption library",
     url="http://github.com/knowmalware/camcrypt",
     packages=['camcrypt'],
+    scripts=[
+        'scripts/camencrypt',
+        'scripts/camdecrypt',
+    ],
     ext_modules=[Extension(
         name='camcrypt.camellia',
         sources=['camellia-GPL-1.2.0/camellia.c'],
